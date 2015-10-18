@@ -1,11 +1,98 @@
-
 #include <vector>
 #include <iostream>
 #include <cstdlib>
 #include <cassert>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
+
+class TrainingData
+{
+public:
+	TrainingData(const string filename);
+	bool isEof(void)
+	{
+		return m_trainingDataFile.eof();
+	}
+	void getTopology(vector<unsigned> &topology);
+
+	// Returns the number of input values read from the file:
+	unsigned getNextInputs(vector<double> &inputVals);
+	unsigned getTargetOutputs(vector<double> &targetOutputVals);
+
+private:
+	ifstream m_trainingDataFile;
+};
+
+void TrainingData::getTopology(vector<unsigned> &topology)
+{
+	string line;
+	string label;
+
+	getline(m_trainingDataFile, line);
+	stringstream ss(line);
+	ss >> label;
+	if(this->isEof() || label.compare("topology:") != 0)
+	{
+		abort();
+	}
+
+	while(!ss.eof())
+	{
+		unsigned n;
+		ss >> n;
+		topology.push_back(n);
+	}
+	return;
+}
+
+TrainingData::TrainingData(const string filename)
+{
+	m_trainingDataFile.open(filename.c_str());
+}
+
+
+unsigned TrainingData::getNextInputs(vector<double> &inputVals)
+{
+    inputVals.clear();
+
+    string line;
+    getline(m_trainingDataFile, line);
+    stringstream ss(line);
+
+    string label;
+    ss >> label;
+    if (label.compare("in:") == 0) {
+        double oneValue;
+        while (ss >> oneValue) {
+            inputVals.push_back(oneValue);
+        }
+    }
+
+    return inputVals.size();
+}
+
+unsigned TrainingData::getTargetOutputs(vector<double> &targetOutputVals)
+{
+    targetOutputVals.clear();
+
+    string line;
+    getline(m_trainingDataFile, line);
+    stringstream ss(line);
+
+    string label;
+    ss>> label;
+    if (label.compare("out:") == 0) {
+        double oneValue;
+        while (ss >> oneValue) {
+            targetOutputVals.push_back(oneValue);
+        }
+    }
+
+    return targetOutputVals.size();
+}
 
 struct Connection
 {
@@ -60,7 +147,7 @@ void Neuron::updateInputWeights(Layer &prevLayer)
 		double newDeltaWeight = 
 				// Individual input, magnified by the gradient and train rate:
 				eta
-				* neuron_getOutputVal()
+				* neuron.getOutputVal()
 				* m_gradient
 				// Also add momentum = a fraction of the previous delta weight
 				+ alpha
@@ -110,12 +197,12 @@ void Neuron::feedForward(const Layer &prevLayer)
 {
 	double sum = 0.0;
 
-	// Sum the previous
-	//
+	// Sum the previous layer's outputs (which are our inputs)
+    // Include the bias node from the previous layer.
 
 	for(unsigned n = 0 ; n < prevLayer.size(); ++n)
 	{
-		sum + = prevLayer[n].getOutputVal() * 
+		sum += prevLayer[n].getOutputVal() * 
 				 prevLayer[n].m_outputWeights[m_myIndex].weight;
 	}
 
@@ -125,13 +212,13 @@ void Neuron::feedForward(const Layer &prevLayer)
 Neuron::Neuron(unsigned numOutputs, unsigned myIndex)
 {
 	for(unsigned c = 0; c < numOutputs; ++c){
-		m_outputWeights.push_back(Connection);
+		m_outputWeights.push_back(Connection());
 		m_outputWeights.back().weight = randomWeight();
 	}
 
 	m_myIndex = myIndex;
 }
-// ****************** class Neuron ******************
+// ****************** class Net ******************
 class Net
 {
 public:
@@ -139,15 +226,18 @@ public:
 	void feedForward(const vector<double> &inputVals);
 	void backProp(const vector<double> &targetVals);
 	void getResults(vector<double> &resultVals) const;
+	double getRecentAverageError(void) const { return m_recentAverageError; }
 
 private:
 	vector<Layer> m_layers; //m_layers[layerNum][neuronNum]
 	double m_error;
 	double m_recentAverageError;
-	double m_recentAverageSmoothingFactor;
+	static double m_recentAverageSmoothingFactor;
 };
 
-void getResults(vector<double> &resultVals) const
+double Net::m_recentAverageSmoothingFactor = 100.0; // Number of training samples to average over
+
+void Net::getResults(vector<double> &resultVals) const
 {
 	resultVals.clear();
 
@@ -201,8 +291,8 @@ void Net::backProp(const std::vector<double> &targetVals)
 
 	for(unsigned layerNum = m_layers.size() - 1; layerNum > 0; --layerNum)
 	{
-		Layer &layer = m_layer[layerNum];
-		Layer &prevLayer = m_layer[layerNum - 1];
+		Layer &layer = m_layers[layerNum];
+		Layer &prevLayer = m_layers[layerNum - 1];
 
 		for(unsigned n = 0; n < layer.size() - 1; ++n)
 		{
@@ -225,7 +315,7 @@ void Net::feedForward(const vector<double> &inputVals)
 	for(unsigned layerNum = 1; layerNum < m_layers.size(); ++layerNum){
 		Layer &prevLayer = m_layers[layerNum - 1];
 		for(unsigned n = 0; n < m_layers[layerNum].size() - 1; ++n){
-			m_layers[layerNum][n].feedForward();
+			m_layers[layerNum][n].feedForward(prevLayer);
 		}
 	}
 }
@@ -248,6 +338,16 @@ Net::Net(const vector<unsigned> &topology)
 		// Force the bias node's output value to 1.0. It's the last neuron created above
 		m_layers.back().back().setOutputVal(1.0);
 	}
+}
+
+void showVectorVals(string label, vector<double> &v)
+{
+	cout << label << " ";
+	for(unsigned i = 0; i < v.size(); ++i)
+	{
+		cout << v[i] << " ";
+	}
+	cout << endl;
 }
 int main()
 {
@@ -279,15 +379,15 @@ int main()
 		showVectorVals("Outputs:", resultVals);
 
 		// Train the net what the outputs should have been:
-		trainData.getTargetOutputs(tragetVals);
-		showVectorVals("Targets:", tragetVals);
+		trainData.getTargetOutputs(targetVals);
+		showVectorVals("Targets:", targetVals);
 		assert(targetVals.size() == topology.back());
 
 		myNet.backProp(targetVals);
 
 		// Report how well the training is working, average over recnet
 		cout << "Net recent average error: "
-		     << myNet.getResultsAverageError() << endl;
+		     << myNet.getRecentAverageError() << endl;
 	}
 
 	cout << endl << "Done" << endl;
