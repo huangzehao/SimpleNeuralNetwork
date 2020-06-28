@@ -4,7 +4,7 @@ This is a C++ implement of simple neural network. It's based on video [Neural Ne
 1 Gernerate training data to slove XOR problem
 ```
     g++ ./makeTrainingSamples.cpp -o makeTrainingSamples
-    ./makeTrainingSamples > out.txt
+    ./makeTrainingSamples > trainingData.
 ```
 2 Test neural netwrok
 ```
