@@ -12,7 +12,7 @@ This is a C++ implement of simple neural network. It's based on video [Neural Ne
     ./neural-net
 ```
 And you will get the result!
-
+...
  In the trainingdata.txt, the default topology is 2 4 1. Changing to a different topology gives different results. 
 For example changing to 2 4 2 1 gives almost 30 percent more accurate model for 4000 samples of data sets compared to previous one.
-
+...
